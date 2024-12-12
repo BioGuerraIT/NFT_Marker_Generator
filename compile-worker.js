@@ -12,38 +12,53 @@ const __dirname = path.dirname(__filename);
 
 const filePath = workerData;
 
+// Create a binomial filter kernel (approximating Gaussian)
+const filterWeights = [
+  [[[1/16]], [[2/16]], [[1/16]]],
+  [[[2/16]], [[4/16]], [[2/16]]],
+  [[[1/16]], [[2/16]], [[1/16]]]
+];
+
+// Create the kernel once and reuse it
+const kernel = tf.tensor4d(filterWeights);
+
 function binomialFilter(input) {
+  if (!tf.util.isValidTensorShape(input.shape) || input.shape.length < 2) {
+    console.error('Invalid input tensor shape:', input.shape);
+    return input;
+  }
+
   return tf.tidy(() => {
-    // Create a binomial filter kernel (approximating Gaussian)
-    const filterWeights = [
-      [[[1/16]], [[2/16]], [[1/16]]],
-      [[[2/16]], [[4/16]], [[2/16]]],
-      [[[1/16]], [[2/16]], [[1/16]]]
-    ];
-    
-    // Create the kernel with proper shape [height, width, in_channels, out_channels]
-    const kernel = tf.tensor4d(filterWeights);
-    
-    // Ensure input is properly shaped [batch, height, width, channels]
-    const reshapedInput = tf.expandDims(tf.expandDims(input, 0), -1);
-    
-    // Apply convolution with proper padding
-    const output = tf.conv2d(reshapedInput, kernel, 1, 'same');
-    
-    // Remove the extra dimensions
-    return tf.squeeze(output);
+    try {
+      // Convert input to tensor if it's not already
+      const inputTensor = tf.tensor(input.arraySync());
+      
+      // Ensure input is properly shaped [batch, height, width, channels]
+      const reshapedInput = tf.expandDims(tf.expandDims(inputTensor, 0), -1);
+      
+      // Apply convolution with proper padding
+      const output = tf.conv2d(reshapedInput, kernel, 1, 'same');
+      
+      // Remove the extra dimensions
+      return tf.squeeze(output);
+    } catch (error) {
+      console.error('Error in binomialFilter:', error);
+      return input;
+    }
   });
 }
 
-// Register the binomial filter operation
-tf.registerKernel({
-  kernelName: 'BinomialFilter',
-  backendName: 'tensorflow',
-  kernelFunc: ({ inputs }) => {
-    const { x } = inputs;
-    return binomialFilter(x);
+// Patch the mind-ar library to use our binomial filter
+const originalDetector = OfflineCompiler.prototype.detect;
+OfflineCompiler.prototype.detect = function(input) {
+  if (!input || !input.shape) {
+    console.error('Invalid input to detect:', input);
+    return null;
   }
-});
+  
+  const filtered = binomialFilter(input);
+  return originalDetector.call(this, filtered);
+};
 
 async function initTensorFlow() {
   try {
@@ -113,6 +128,7 @@ async function compile() {
     // Clean up TensorFlow memory
     tf.engine().endScope();
     tf.disposeVariables();
+    kernel.dispose();
   }
 }
 
