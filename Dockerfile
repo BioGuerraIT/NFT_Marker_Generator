@@ -25,8 +25,9 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies with specific platform
-RUN npm install --target_platform=linux --target_arch=x64
+# Install dependencies with specific platform and clean npm cache
+RUN npm install --target_platform=linux --target_arch=x64 && \
+    npm cache clean --force
 
 # Copy source code
 COPY . .
@@ -36,10 +37,11 @@ RUN mkdir -p uploads outputs && \
     chmod 777 uploads outputs
 
 # Set environment variables for TensorFlow.js
-ENV TFJS_BACKEND=cpu
+ENV TFJS_BACKEND=tensorflow
 ENV TF_FORCE_GPU_ALLOW_GROWTH=true
-ENV TF_CPP_MIN_LOG_LEVEL=2
+ENV TF_CPP_MIN_LOG_LEVEL=0
 ENV TF_ENABLE_ONEDNN_OPTS=0
+ENV NODE_OPTIONS="--max-old-space-size=4096"
 
 # Expose port
 EXPOSE 3000
