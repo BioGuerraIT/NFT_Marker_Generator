@@ -49,11 +49,15 @@ RUN mkdir -p uploads outputs && \
     chmod 777 uploads outputs
 
 # Set environment variables
-ENV NODE_OPTIONS="--max-old-space-size=4096 --expose-gc"
+ENV NODE_OPTIONS="--max-old-space-size=4096"
 ENV LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
 
 # Expose port
 EXPOSE 3000
 
+# Create a startup script
+RUN echo '#!/bin/sh\nnode --expose-gc server.js' > start.sh && \
+    chmod +x start.sh
+
 # Start the application with garbage collection enabled
-CMD ["node", "--expose-gc", "server.js"]
+CMD ["./start.sh"]
