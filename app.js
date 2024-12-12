@@ -13,6 +13,10 @@ function runWorker(workerData) {
         maxOldGenerationSizeMb: 2048,
         maxYoungGenerationSizeMb: 512,
         codeRangeSizeMb: 64
+      },
+      env: {
+        ...process.env,
+        TF_CPP_MIN_LOG_LEVEL: '2' // Suppress TensorFlow warnings
       }
     };
     
@@ -21,21 +25,30 @@ function runWorker(workerData) {
       workerData
     });
 
+    let hasResult = false;
+
     worker.on('message', (message) => {
       if (message.type === 'progress') {
         process.stdout.write(`Processing: ${Math.round(message.progress)}%\r`);
       } else if (message.type === 'complete') {
+        hasResult = true;
         if (message.success) {
+          console.log(`Success: ${message.path}`);
           resolve(message.path);
         } else {
+          console.error(`Error: ${message.message}`);
           reject(new Error(message.message));
         }
       }
     });
 
-    worker.on('error', reject);
+    worker.on('error', (err) => {
+      console.error('Worker error:', err);
+      reject(err);
+    });
+
     worker.on('exit', (code) => {
-      if (code !== 0) {
+      if (code !== 0 && !hasResult) {
         reject(new Error(`Worker stopped with exit code ${code}`));
       }
     });
@@ -54,7 +67,7 @@ function runWorker(workerData) {
 if (process.argv[2]) {
   runWorker(process.argv[2])
     .then((result) => {
-      console.log('Success:', result);
+      console.log(`Success: ${result}`);
       process.exit(0);
     })
     .catch((error) => {
