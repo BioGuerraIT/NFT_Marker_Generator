@@ -14,20 +14,22 @@ const __dirname = path.dirname(__filename);
 const filePath = workerData;
 
 async function initTensorFlow() {
-  // Register and set up TensorFlow.js backend
-  await tf.setBackend('tensorflow');
-  await tf.ready();
-  
-  // Configure memory management
-  tf.engine().startScope();
-  
-  // Enable debug mode for more detailed errors
-  tf.enableDebugMode();
-  
-  // Configure memory growth
-  const backend = tf.backend();
-  if (backend && backend.setThreadsCount) {
-    backend.setThreadsCount(4); // Limit thread count
+  try {
+    // Register and set up TensorFlow.js backend
+    await tf.setBackend('webgl');
+    await tf.ready();
+    
+    // Configure memory management
+    tf.engine().startScope();
+    
+    // Configure memory growth
+    const backend = tf.backend();
+    if (backend && backend.setThreadsCount) {
+      backend.setThreadsCount(1); // Limit thread count
+    }
+  } catch (error) {
+    console.error('TensorFlow initialization error:', error);
+    throw error;
   }
 }
 
@@ -38,9 +40,10 @@ async function compile() {
     const image = await loadImage(filePath);
     const compiler = new OfflineCompiler({
       maxWorkers: 1,
-      debug: true,
       warmupTolerance: 1,
-      maxTrack: 1
+      maxTrack: 1,
+      filterMinCF: 0.1,
+      filterBeta: 10
     });
     
     // Send progress updates
