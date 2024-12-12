@@ -1,6 +1,6 @@
 FROM node:18-slim
 
-# Install dependencies for canvas
+# Install dependencies for canvas and TensorFlow.js
 RUN apt-get update && apt-get install -y \
     build-essential \
     libcairo2-dev \
@@ -9,7 +9,16 @@ RUN apt-get update && apt-get install -y \
     libgif-dev \
     librsvg2-dev \
     pkg-config \
-    python3
+    python3 \
+    python3-pip \
+    libatlas-base-dev \
+    libhdf5-dev \
+    libhdf5-serial-dev \
+    libstdc++6 \
+    gfortran \
+    libblas-dev \
+    liblapack-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
