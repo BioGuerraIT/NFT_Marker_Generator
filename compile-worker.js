@@ -4,7 +4,8 @@ import { OfflineCompiler } from "mind-ar/src/image-target/offline-compiler.js";
 import { writeFile, mkdir } from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
-import * as tf from '@tensorflow/tfjs-node';
+import * as tf from '@tensorflow/tfjs';
+import '@tensorflow/tfjs-node';
 
 // Define __dirname for ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -13,10 +14,21 @@ const __dirname = path.dirname(__filename);
 const filePath = workerData;
 
 async function initTensorFlow() {
-  // Initialize TensorFlow.js with CPU backend
-  await tf.setBackend('cpu');
+  // Register and set up TensorFlow.js backend
+  await tf.setBackend('tensorflow');
   await tf.ready();
-  tf.engine().startScope(); // Start a memory scope
+  
+  // Configure memory management
+  tf.engine().startScope();
+  
+  // Enable debug mode for more detailed errors
+  tf.enableDebugMode();
+  
+  // Configure memory growth
+  const backend = tf.backend();
+  if (backend && backend.setThreadsCount) {
+    backend.setThreadsCount(4); // Limit thread count
+  }
 }
 
 async function compile() {
@@ -25,28 +37,29 @@ async function compile() {
     
     const image = await loadImage(filePath);
     const compiler = new OfflineCompiler({
-      tfBackend: 'cpu',
-      maxWorkers: 1
+      maxWorkers: 1,
+      debug: true,
+      warmupTolerance: 1,
+      maxTrack: 1
     });
     
     // Send progress updates
     await compiler.compileImageTargets([image], (progress) => {
       parentPort.postMessage({
         type: 'progress',
-        progress: progress * 100 // Convert to percentage
+        progress: progress * 100
       });
     });
     
     const buffer = compiler.exportData();
-
+    
     const outputDir = path.resolve(__dirname, "outputs");
     const fileName = `target_${Date.now()}.mind`;
     const targetMindPath = path.join(outputDir, fileName);
-
+    
     await mkdir(outputDir, { recursive: true });
     await writeFile(targetMindPath, buffer);
     
-    // Send final success message
     parentPort.postMessage({
       type: 'complete',
       success: true,
@@ -55,7 +68,7 @@ async function compile() {
     });
     
   } catch (error) {
-    // Send error message
+    console.error('Compilation error:', error);
     parentPort.postMessage({
       type: 'complete',
       success: false,
@@ -64,7 +77,7 @@ async function compile() {
   } finally {
     // Clean up TensorFlow memory
     tf.engine().endScope();
-    tf.dispose();
+    tf.disposeVariables();
   }
 }
 
