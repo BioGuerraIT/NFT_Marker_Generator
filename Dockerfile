@@ -35,8 +35,11 @@ COPY . .
 RUN mkdir -p uploads outputs && \
     chmod 777 uploads outputs
 
-# Set environment variable for TensorFlow.js
-ENV TFJS_BACKEND=tensorflow
+# Set environment variables for TensorFlow.js
+ENV TFJS_BACKEND=cpu
+ENV TF_FORCE_GPU_ALLOW_GROWTH=true
+ENV TF_CPP_MIN_LOG_LEVEL=2
+ENV TF_ENABLE_ONEDNN_OPTS=0
 
 # Expose port
 EXPOSE 3000

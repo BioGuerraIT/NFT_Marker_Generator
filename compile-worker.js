@@ -4,7 +4,7 @@ import { OfflineCompiler } from "mind-ar/src/image-target/offline-compiler.js";
 import { writeFile, mkdir } from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
-import tf from '@tensorflow/tfjs-node';
+import * as tf from '@tensorflow/tfjs-node';
 
 // Define __dirname for ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -13,7 +13,8 @@ const __dirname = path.dirname(__filename);
 const filePath = workerData;
 
 async function initTensorFlow() {
-  // Initialize TensorFlow.js with memory cleanup
+  // Initialize TensorFlow.js with CPU backend
+  await tf.setBackend('cpu');
   await tf.ready();
   tf.engine().startScope(); // Start a memory scope
 }
@@ -23,7 +24,10 @@ async function compile() {
     await initTensorFlow();
     
     const image = await loadImage(filePath);
-    const compiler = new OfflineCompiler();
+    const compiler = new OfflineCompiler({
+      tfBackend: 'cpu',
+      maxWorkers: 1
+    });
     
     // Send progress updates
     await compiler.compileImageTargets([image], (progress) => {
