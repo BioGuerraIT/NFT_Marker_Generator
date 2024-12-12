@@ -18,6 +18,8 @@ RUN apt-get update && apt-get install -y \
     gfortran \
     libblas-dev \
     liblapack-dev \
+    pixman \
+    libpixman-1-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -30,12 +32,14 @@ ENV PYTHON=/usr/bin/python3
 ENV NODE_GYP_FORCE_PYTHON=/usr/bin/python3
 ENV NPM_CONFIG_LOGLEVEL=error
 ENV NODE_ENV=production
+ENV PKG_CONFIG_PATH=/usr/lib/pkgconfig
 
 # Install dependencies
 RUN npm install -g node-gyp && \
     npm install -g npm@10.2.4 && \
     npm install --target_platform=linux --target_arch=x64 --production && \
-    npm rebuild @tensorflow/tfjs-node --build-from-source && \
+    # Rebuild canvas specifically
+    npm rebuild canvas --update-binary && \
     npm cache clean --force
 
 # Copy source code
@@ -47,8 +51,6 @@ RUN mkdir -p uploads outputs && \
 
 # Set environment variables for TensorFlow.js
 ENV NODE_OPTIONS="--max-old-space-size=4096"
-ENV TF_CPP_MIN_LOG_LEVEL=0
-ENV TF_FORCE_GPU_ALLOW_GROWTH=true
 ENV LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
 
 # Expose port

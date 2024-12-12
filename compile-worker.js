@@ -1,5 +1,5 @@
 import { parentPort, workerData } from 'worker_threads';
-import { loadImage } from "canvas";
+import { createCanvas, loadImage, Canvas } from "canvas";
 import { OfflineCompiler } from "mind-ar/src/image-target/offline-compiler.js";
 import { writeFile, mkdir } from 'fs/promises';
 import path from 'path';
@@ -13,7 +13,7 @@ const filePath = workerData;
 
 // Function to optimize image before processing
 async function optimizeImage(image) {
-  const canvas = new Canvas(image.width, image.height);
+  const canvas = createCanvas(image.width, image.height);
   const ctx = canvas.getContext('2d');
   
   // Draw image with smoothing
