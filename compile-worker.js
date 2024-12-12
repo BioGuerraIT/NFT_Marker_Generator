@@ -4,8 +4,7 @@ import { OfflineCompiler } from "mind-ar/src/image-target/offline-compiler.js";
 import { writeFile, mkdir } from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
-import * as tf from '@tensorflow/tfjs';
-import '@tensorflow/tfjs-node';
+import * as tf from '@tensorflow/tfjs-node';
 
 // Define __dirname for ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -16,7 +15,7 @@ const filePath = workerData;
 async function initTensorFlow() {
   try {
     // Register and set up TensorFlow.js backend
-    await tf.setBackend('webgl');
+    await tf.setBackend('tensorflow');
     await tf.ready();
     
     // Configure memory management
@@ -27,6 +26,13 @@ async function initTensorFlow() {
     if (backend && backend.setThreadsCount) {
       backend.setThreadsCount(1); // Limit thread count
     }
+
+    // Enable memory cleanup
+    tf.tidy(() => {
+      // Pre-warm the backend
+      const dummyTensor = tf.zeros([1, 1]);
+      dummyTensor.dispose();
+    });
   } catch (error) {
     console.error('TensorFlow initialization error:', error);
     throw error;
@@ -43,7 +49,8 @@ async function compile() {
       warmupTolerance: 1,
       maxTrack: 1,
       filterMinCF: 0.1,
-      filterBeta: 10
+      filterBeta: 10,
+      tfBackend: 'tensorflow'
     });
     
     // Send progress updates

@@ -18,7 +18,6 @@ RUN apt-get update && apt-get install -y \
     gfortran \
     libblas-dev \
     liblapack-dev \
-    xvfb \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -38,12 +37,14 @@ RUN mkdir -p uploads outputs && \
     chmod 777 uploads outputs
 
 # Set environment variables for TensorFlow.js
-ENV TFJS_BACKEND=webgl
+ENV TFJS_BACKEND=tensorflow
 ENV TF_FORCE_GPU_ALLOW_GROWTH=true
 ENV TF_CPP_MIN_LOG_LEVEL=0
 ENV TF_ENABLE_ONEDNN_OPTS=0
 ENV NODE_OPTIONS="--max-old-space-size=4096"
-ENV DISPLAY=:99
 
-# Start Xvfb for WebGL support
-CMD Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 & npm start
+# Expose port
+EXPOSE 3000
+
+# Start the application
+CMD ["npm", "start"]
