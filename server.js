@@ -1,7 +1,7 @@
 import express from "express";
 import multer from "multer";
 import path from "path";
-import { exec } from "child_process";
+import { spawn } from "child_process";
 import { fileURLToPath } from "url";
 import fs from "fs";
 import { writeFile } from 'fs/promises';
@@ -27,6 +27,7 @@ const upload = multer({ storage: storage });
 
 // Add CORS middleware
 app.use(cors());
+app.use(express.json());
 
 app.post("/create-nft", upload.single("image"), async (req, res) => {
   if (!req.file) {
@@ -36,50 +37,51 @@ app.post("/create-nft", upload.single("image"), async (req, res) => {
   const uploadedFilePath = req.file.path;
   console.log("Uploaded file path:", uploadedFilePath);
 
-  try {
-    const command = `node app.js "${uploadedFilePath}"`;
-    exec(command, { maxBuffer: 1024 * 500 }, (error, stdout, stderr) => {
-      console.log("stdout:", stdout);
-      console.log("stderr:", stderr);
-      
-      if (error) {
-        console.error("Error running nft_creator:", error);
-        return res.status(500).json({ error: "Error generating NFT marker" });
-      }
+  const nftCreator = spawn('node', ['app.js', uploadedFilePath]);
+  let stdoutData = '';
+  let stderrData = '';
+  let mindFilePath = null;
 
-      try {
-        const workerResult = JSON.parse(stdout.trim());
-        console.log("Parsed worker result:", workerResult);
-        
-        if (!workerResult.success) {
-          return res.status(500).json({ error: workerResult.message });
-        }
+  nftCreator.stdout.on('data', (data) => {
+    stdoutData += data.toString();
+    // Check for success message in the output
+    const match = stdoutData.match(/Success: (.+\.mind)/);
+    if (match) {
+      mindFilePath = match[1];
+    }
+  });
 
-        // Clean up the uploaded file
-        fs.unlink(uploadedFilePath, (err) => {
-          if (err) console.error('Error deleting uploaded file:', err);
-        });
+  nftCreator.stderr.on('data', (data) => {
+    stderrData += data.toString();
+  });
 
-        // Generate download URL
-        const mindFileName = path.basename(workerResult.path);
-        const downloadUrl = `${req.protocol}://${req.get('host')}/outputs/${mindFileName}`;
+  nftCreator.on('close', (code) => {
+    console.log('stdout:', stdoutData);
+    console.log('stderr:', stderrData);
 
-        res.json({
-          success: true,
-          message: workerResult.message,
-          downloadUrl,
-          fileName: mindFileName
-        });
+    if (code !== 0) {
+      return res.status(500).json({ error: 'Error generating NFT marker' });
+    }
 
-      } catch (parseError) {
-        console.error("Error parsing JSON output:", parseError, "Raw stdout:", stdout);
-        return res.status(500).json({ error: "Invalid response from nft_creator" });
-      }
-    });
-  } catch (error) {
-    console.error("Server error:", error);
-    res.status(500).json({ error: "Internal server error" });
-  }
+    if (mindFilePath) {
+      // Get just the filename from the path
+      const fileName = path.basename(mindFilePath);
+      // Construct the URL path
+      const mindFileUrl = `${req.protocol}://${req.get('host')}/outputs/${fileName}`;
+      res.json({ 
+        success: true,
+        message: 'NFT marker generated successfully',
+        path: mindFileUrl
+      });
+    } else {
+      res.status(500).json({ error: 'Could not find generated file path' });
+    }
+  });
+
+  nftCreator.on('error', (error) => {
+    console.error('Error:', error);
+    res.status(500).json({ error: 'Error running nft_creator' });
+  });
 });
 
 app.post("/create-ar-page", upload.none(), async (req, res) => {
@@ -122,6 +124,7 @@ app.use((err, req, res, next) => {
   });
 });
 
+const serverUrl = process.env.RAILWAY_STATIC_URL || `http://localhost:${PORT}`;
 app.listen(PORT, () => {
-  console.log(`NFT Creator is running on https://nftmarkergenerator-production.up.railway.app`);
+  console.log(`NFT Creator is running on ${serverUrl}`);
 });
