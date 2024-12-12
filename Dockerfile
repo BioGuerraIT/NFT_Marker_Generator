@@ -28,9 +28,12 @@ COPY package*.json ./
 # Set build environment variables
 ENV PYTHON=/usr/bin/python3
 ENV NODE_GYP_FORCE_PYTHON=/usr/bin/python3
+ENV NPM_CONFIG_LOGLEVEL=error
 
 # Install dependencies with specific platform
-RUN npm install --target_platform=linux --target_arch=x64 && \
+RUN npm install -g npm@latest && \
+    npm install --target_platform=linux --target_arch=x64 --no-optional && \
+    npm audit fix --force && \
     npm cache clean --force && \
     # Install node-gyp globally
     npm install -g node-gyp && \
