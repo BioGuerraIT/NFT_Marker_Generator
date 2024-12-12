@@ -19,7 +19,7 @@ async function optimizeImage(image) {
   // Scale down large images to prevent memory issues
   let targetWidth = image.width;
   let targetHeight = image.height;
-  const MAX_SIZE = 1024;
+  const MAX_SIZE = 800;
   
   if (image.width > MAX_SIZE || image.height > MAX_SIZE) {
     const ratio = Math.min(MAX_SIZE / image.width, MAX_SIZE / image.height);
@@ -47,13 +47,15 @@ async function optimizeImage(image) {
 
 async function compileTarget() {
   let canvas = null;
+  let compiler = null;
+  
   try {
     // Load and optimize the image
     const originalImage = await loadImage(filePath);
     const optimizedImage = await optimizeImage(originalImage);
     
     // Initialize compiler with optimized settings
-    const compiler = new OfflineCompiler({
+    compiler = new OfflineCompiler({
       maxWorkers: 1,
       warmupTolerance: 1,
       maxTrack: 1,
@@ -64,15 +66,21 @@ async function compileTarget() {
     
     // Normalize progress reporting
     let lastProgress = 0;
+    let lastReportTime = Date.now();
+    
     await compiler.compileImageTargets([optimizedImage], (progress) => {
-      // Ensure progress is between 0 and 100
-      const normalizedProgress = Math.min(Math.max(progress * 100, lastProgress), 100);
-      lastProgress = normalizedProgress;
-      
-      parentPort.postMessage({
-        type: 'progress',
-        progress: normalizedProgress
-      });
+      const now = Date.now();
+      // Only report progress every 500ms to reduce overhead
+      if (now - lastReportTime >= 500) {
+        const normalizedProgress = Math.min(Math.max(progress * 100, lastProgress), 100);
+        lastProgress = normalizedProgress;
+        lastReportTime = now;
+        
+        parentPort.postMessage({
+          type: 'progress',
+          progress: normalizedProgress
+        });
+      }
     });
     
     // Export and save the compiled data
@@ -88,11 +96,19 @@ async function compileTarget() {
   } catch (error) {
     throw error;
   } finally {
-    // Clean up any remaining canvas instances
+    // Clean up resources
     if (canvas) {
       canvas.width = 1;
       canvas.height = 1;
       canvas = null;
+    }
+    
+    if (compiler) {
+      // Clean up compiler resources if possible
+      if (typeof compiler.dispose === 'function') {
+        compiler.dispose();
+      }
+      compiler = null;
     }
     
     // Force garbage collection if available
@@ -111,6 +127,7 @@ compileTarget()
       message: "NFT marker generated successfully",
       path: targetPath
     });
+    process.exit(0);
   })
   .catch((error) => {
     console.error('Compilation error:', error);
@@ -119,4 +136,5 @@ compileTarget()
       success: false,
       message: `Worker Error: ${error.message}`
     });
+    process.exit(1);
   });
