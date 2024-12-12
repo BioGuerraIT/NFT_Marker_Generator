@@ -4,6 +4,7 @@ import { OfflineCompiler } from "mind-ar/src/image-target/offline-compiler.js";
 import { writeFile, mkdir } from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
+import tf from '@tensorflow/tfjs-node';
 
 // Define __dirname for ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -11,8 +12,16 @@ const __dirname = path.dirname(__filename);
 
 const filePath = workerData;
 
-new Promise(async (resolve, reject) => {
+async function initTensorFlow() {
+  // Initialize TensorFlow.js with memory cleanup
+  await tf.ready();
+  tf.engine().startScope(); // Start a memory scope
+}
+
+async function compile() {
   try {
+    await initTensorFlow();
+    
     const image = await loadImage(filePath);
     const compiler = new OfflineCompiler();
     
@@ -41,7 +50,6 @@ new Promise(async (resolve, reject) => {
       path: targetMindPath
     });
     
-    resolve();
   } catch (error) {
     // Send error message
     parentPort.postMessage({
@@ -49,6 +57,15 @@ new Promise(async (resolve, reject) => {
       success: false,
       message: `Worker Error: ${error.message}`
     });
-    reject(error);
+  } finally {
+    // Clean up TensorFlow memory
+    tf.engine().endScope();
+    tf.dispose();
   }
+}
+
+// Start compilation
+compile().catch(error => {
+  console.error('Compilation error:', error);
+  process.exit(1);
 });

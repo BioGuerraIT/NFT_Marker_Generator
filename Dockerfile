@@ -1,4 +1,4 @@
-FROM node:18-slim
+FROM node:18
 
 # Install dependencies for canvas and TensorFlow.js
 RUN apt-get update && apt-get install -y \
@@ -25,8 +25,8 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
-RUN npm install
+# Install dependencies with specific platform
+RUN npm install --target_platform=linux --target_arch=x64
 
 # Copy source code
 COPY . .
@@ -34,6 +34,9 @@ COPY . .
 # Create required directories
 RUN mkdir -p uploads outputs && \
     chmod 777 uploads outputs
+
+# Set environment variable for TensorFlow.js
+ENV TFJS_BACKEND=tensorflow
 
 # Expose port
 EXPOSE 3000
