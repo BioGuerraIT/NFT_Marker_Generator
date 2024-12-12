@@ -123,5 +123,5 @@ app.use((err, req, res, next) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Backend service running on http://localhost:${PORT}`);
+  console.log(`NFT Creator is running on https://nftmarkergenerator-production.up.railway.app`);
 });
