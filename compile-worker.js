@@ -12,41 +12,35 @@ const __dirname = path.dirname(__filename);
 
 const filePath = workerData;
 
-function createBinomialFilter() {
-  // Create a binomial filter kernel (approximating Gaussian)
-  const filterWeights = [
-    [1/16, 2/16, 1/16],
-    [2/16, 4/16, 2/16],
-    [1/16, 2/16, 1/16]
-  ];
-  return tf.tensor4d(filterWeights, [3, 3, 1, 1]);
+function binomialFilter(input) {
+  return tf.tidy(() => {
+    // Create a binomial filter kernel (approximating Gaussian)
+    const filterWeights = [
+      [1/16, 2/16, 1/16],
+      [2/16, 4/16, 2/16],
+      [1/16, 2/16, 1/16]
+    ];
+    const kernel = tf.tensor4d(filterWeights, [3, 3, 1, 1]);
+    
+    // Ensure input is properly shaped
+    const reshapedInput = input.reshape([1, input.shape[0], input.shape[1], 1]);
+    
+    // Apply convolution
+    const output = tf.conv2d(reshapedInput, kernel, 1, 'same');
+    
+    // Reshape back to original dimensions
+    return output.reshape(input.shape);
+  });
 }
 
-async function registerCustomOps() {
-  try {
-    // Register BinomialFilter as a custom operation
-    tf.customGrad((x) => {
-      const forward = () => {
-        // Ensure input is properly shaped
-        const reshapedInput = x.reshape([1, x.shape[0], x.shape[1], 1]);
-        const kernel = createBinomialFilter();
-        
-        // Apply convolution and reshape back
-        const output = tf.conv2d(reshapedInput, kernel, 1, 'same');
-        return output.reshape(x.shape);
-      };
-      
-      // Define gradient for backpropagation (identity gradient for now)
-      const backward = (dy) => dy;
-      
-      return { value: forward(), gradFunc: backward };
-    }, 'BinomialFilter');
-    
-  } catch (error) {
-    console.error('Error registering custom ops:', error);
-    throw error;
+// Monkey patch the BinomialFilter operation
+tf.engine().registerBackend('tensorflow', {
+  ...tf.backend(),
+  binomialFilter: (args) => {
+    const { x } = args;
+    return binomialFilter(x);
   }
-}
+});
 
 async function initTensorFlow() {
   try {
@@ -54,14 +48,10 @@ async function initTensorFlow() {
     await tf.ready();
     tf.engine().startScope();
     
-    // Register custom operations
-    await registerCustomOps();
-    
     // Pre-warm the backend
     tf.tidy(() => {
-      // Create and dispose a small test tensor
       const testTensor = tf.tensor2d([[1, 2], [3, 4]]);
-      const warmupResult = tf.customOp(testTensor, 'BinomialFilter');
+      const warmupResult = binomialFilter(testTensor);
       warmupResult.dispose();
       testTensor.dispose();
     });
