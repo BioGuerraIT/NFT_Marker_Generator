@@ -12,30 +12,39 @@ const __dirname = path.dirname(__filename);
 
 const filePath = workerData;
 
+function createBinomialFilter() {
+  // Create a binomial filter kernel (approximating Gaussian)
+  const filterWeights = [
+    [1/16, 2/16, 1/16],
+    [2/16, 4/16, 2/16],
+    [1/16, 2/16, 1/16]
+  ];
+  return tf.tensor4d(filterWeights, [3, 3, 1, 1]);
+}
+
 async function registerCustomOps() {
   try {
-    // Register BinomialFilter as a custom convolution operation
-    tf.registerKernel({
-      kernelName: 'BinomialFilter',
-      backendName: 'tensorflow',
-      kernelFunc: ({ inputs, backend }) => {
-        const { x } = inputs;
+    // Register BinomialFilter as a custom operation
+    tf.customGrad((x) => {
+      const forward = () => {
+        // Ensure input is properly shaped
+        const reshapedInput = x.reshape([1, x.shape[0], x.shape[1], 1]);
+        const kernel = createBinomialFilter();
         
-        // Create a binomial filter kernel (approximating Gaussian)
-        const filterWeights = [
-          [1/16, 2/16, 1/16],
-          [2/16, 4/16, 2/16],
-          [1/16, 2/16, 1/16]
-        ];
-        
-        const kernel = tf.tensor(filterWeights, [3, 3, 1, 1]);
-        
-        // Apply convolution
-        return tf.conv2d(x, kernel, 1, 'same');
-      }
-    });
+        // Apply convolution and reshape back
+        const output = tf.conv2d(reshapedInput, kernel, 1, 'same');
+        return output.reshape(x.shape);
+      };
+      
+      // Define gradient for backpropagation (identity gradient for now)
+      const backward = (dy) => dy;
+      
+      return { value: forward(), gradFunc: backward };
+    }, 'BinomialFilter');
+    
   } catch (error) {
     console.error('Error registering custom ops:', error);
+    throw error;
   }
 }
 
@@ -50,8 +59,11 @@ async function initTensorFlow() {
     
     // Pre-warm the backend
     tf.tidy(() => {
-      const warmupTensor = tf.zeros([1, 1]);
-      warmupTensor.dispose();
+      // Create and dispose a small test tensor
+      const testTensor = tf.tensor2d([[1, 2], [3, 4]]);
+      const warmupResult = tf.customOp(testTensor, 'BinomialFilter');
+      warmupResult.dispose();
+      testTensor.dispose();
     });
   } catch (error) {
     console.error('TensorFlow initialization error:', error);

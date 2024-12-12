@@ -25,13 +25,19 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
+# Set build environment variables
+ENV PYTHON=/usr/bin/python3
+ENV NODE_GYP_FORCE_PYTHON=/usr/bin/python3
+
 # Install dependencies with specific platform
 RUN npm install --target_platform=linux --target_arch=x64 && \
     npm cache clean --force && \
     # Install node-gyp globally
     npm install -g node-gyp && \
     # Rebuild TensorFlow.js with proper flags
-    npm rebuild @tensorflow/tfjs-node --build-from-source
+    npm rebuild @tensorflow/tfjs-node --build-from-source -- \
+    --tensorflow_cpu=1 \
+    --tensorflow_mkl=0
 
 # Copy source code
 COPY . .
