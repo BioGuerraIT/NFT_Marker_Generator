@@ -4,7 +4,8 @@ import { OfflineCompiler } from "mind-ar/src/image-target/offline-compiler.js";
 import { writeFile, mkdir } from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
-import * as tf from '@tensorflow/tfjs-node';
+import * as tf from '@tensorflow/tfjs';
+import '@tensorflow/tfjs-node';
 
 // Define __dirname for ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -14,25 +15,36 @@ const filePath = workerData;
 
 async function initTensorFlow() {
   try {
-    // Register and set up TensorFlow.js backend
+    // Configure TensorFlow.js
     await tf.setBackend('tensorflow');
+    await tf.enableProdMode(); // Disable debug mode
     await tf.ready();
-    
+
     // Configure memory management
     tf.engine().startScope();
-    
-    // Configure memory growth
-    const backend = tf.backend();
-    if (backend && backend.setThreadsCount) {
-      backend.setThreadsCount(1); // Limit thread count
-    }
 
-    // Enable memory cleanup
+    // Pre-warm the backend
     tf.tidy(() => {
-      // Pre-warm the backend
-      const dummyTensor = tf.zeros([1, 1]);
-      dummyTensor.dispose();
+      const warmupTensor = tf.zeros([1, 1]);
+      warmupTensor.dispose();
     });
+
+    // Register custom ops if needed
+    const customBackend = tf.findBackend('tensorflow');
+    if (customBackend && !customBackend.kernelRegistry.has('BinomialFilter')) {
+      customBackend.kernelRegistry.set('BinomialFilter', {
+        kernelName: 'BinomialFilter',
+        backendName: 'tensorflow',
+        kernelFunc: (args) => {
+          const { x } = args.inputs;
+          return tf.tidy(() => {
+            // Simple Gaussian-like filter approximation
+            const kernel = tf.tensor2d([[1, 2, 1], [2, 4, 2], [1, 2, 1]]).div(16);
+            return tf.conv2d(x.expandDims(0), kernel.expandDims(-1).expandDims(-1), 1, 'same').squeeze(0);
+          });
+        },
+      });
+    }
   } catch (error) {
     console.error('TensorFlow initialization error:', error);
     throw error;
@@ -50,7 +62,8 @@ async function compile() {
       maxTrack: 1,
       filterMinCF: 0.1,
       filterBeta: 10,
-      tfBackend: 'tensorflow'
+      tfBackend: 'tensorflow',
+      debugMode: false
     });
     
     // Send progress updates
