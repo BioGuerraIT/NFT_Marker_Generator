@@ -29,18 +29,14 @@ COPY package*.json ./
 ENV PYTHON=/usr/bin/python3
 ENV NODE_GYP_FORCE_PYTHON=/usr/bin/python3
 ENV NPM_CONFIG_LOGLEVEL=error
+ENV NODE_ENV=production
 
-# Install dependencies with specific platform
-RUN npm install -g npm@latest && \
-    npm install --target_platform=linux --target_arch=x64 --no-optional && \
-    npm audit fix --force && \
-    npm cache clean --force && \
-    # Install node-gyp globally
-    npm install -g node-gyp && \
-    # Rebuild TensorFlow.js with proper flags
-    npm rebuild @tensorflow/tfjs-node --build-from-source -- \
-    --tensorflow_cpu=1 \
-    --tensorflow_mkl=0
+# Install dependencies
+RUN npm install -g node-gyp && \
+    npm install -g npm@10.2.4 && \
+    npm install --target_platform=linux --target_arch=x64 --production && \
+    npm rebuild @tensorflow/tfjs-node --build-from-source && \
+    npm cache clean --force
 
 # Copy source code
 COPY . .
