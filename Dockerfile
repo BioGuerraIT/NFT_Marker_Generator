@@ -25,10 +25,12 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies with specific platform and clean npm cache
+# Install dependencies with specific platform
 RUN npm install --target_platform=linux --target_arch=x64 && \
     npm cache clean --force && \
-    # Rebuild TensorFlow.js for the current platform
+    # Install node-gyp globally
+    npm install -g node-gyp && \
+    # Rebuild TensorFlow.js with proper flags
     npm rebuild @tensorflow/tfjs-node --build-from-source
 
 # Copy source code
@@ -39,11 +41,9 @@ RUN mkdir -p uploads outputs && \
     chmod 777 uploads outputs
 
 # Set environment variables for TensorFlow.js
-ENV TFJS_BACKEND=tensorflow
-ENV TF_FORCE_GPU_ALLOW_GROWTH=true
-ENV TF_CPP_MIN_LOG_LEVEL=0
-ENV TF_ENABLE_ONEDNN_OPTS=0
 ENV NODE_OPTIONS="--max-old-space-size=4096"
+ENV TF_CPP_MIN_LOG_LEVEL=0
+ENV TF_FORCE_GPU_ALLOW_GROWTH=true
 ENV LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
 
 # Expose port
