@@ -1,5 +1,5 @@
 import { parentPort, workerData } from 'worker_threads';
-import { createCanvas, loadImage, Canvas } from "canvas";
+import { createCanvas, loadImage } from "canvas";
 import { OfflineCompiler } from "mind-ar/src/image-target/offline-compiler.js";
 import { writeFile, mkdir } from 'fs/promises';
 import path from 'path';
@@ -16,15 +16,37 @@ async function optimizeImage(image) {
   const canvas = createCanvas(image.width, image.height);
   const ctx = canvas.getContext('2d');
   
+  // Scale down large images to prevent memory issues
+  let targetWidth = image.width;
+  let targetHeight = image.height;
+  const MAX_SIZE = 1024;
+  
+  if (image.width > MAX_SIZE || image.height > MAX_SIZE) {
+    const ratio = Math.min(MAX_SIZE / image.width, MAX_SIZE / image.height);
+    targetWidth = Math.floor(image.width * ratio);
+    targetHeight = Math.floor(image.height * ratio);
+  }
+  
+  canvas.width = targetWidth;
+  canvas.height = targetHeight;
+  
   // Draw image with smoothing
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(image, 0, 0, image.width, image.height);
+  ctx.drawImage(image, 0, 0, targetWidth, targetHeight);
   
-  return await loadImage(canvas.toBuffer());
+  const optimized = await loadImage(canvas.toBuffer());
+  
+  // Clean up
+  canvas.width = 1;
+  canvas.height = 1;
+  ctx.clearRect(0, 0, 1, 1);
+  
+  return optimized;
 }
 
 async function compileTarget() {
+  let canvas = null;
   try {
     // Load and optimize the image
     const originalImage = await loadImage(filePath);
@@ -40,11 +62,16 @@ async function compileTarget() {
       debugMode: false
     });
     
-    // Compile with progress updates
+    // Normalize progress reporting
+    let lastProgress = 0;
     await compiler.compileImageTargets([optimizedImage], (progress) => {
+      // Ensure progress is between 0 and 100
+      const normalizedProgress = Math.min(Math.max(progress * 100, lastProgress), 100);
+      lastProgress = normalizedProgress;
+      
       parentPort.postMessage({
         type: 'progress',
-        progress: progress * 100
+        progress: normalizedProgress
       });
     });
     
@@ -60,6 +87,18 @@ async function compileTarget() {
     return targetMindPath;
   } catch (error) {
     throw error;
+  } finally {
+    // Clean up any remaining canvas instances
+    if (canvas) {
+      canvas.width = 1;
+      canvas.height = 1;
+      canvas = null;
+    }
+    
+    // Force garbage collection if available
+    if (global.gc) {
+      global.gc();
+    }
   }
 }
 

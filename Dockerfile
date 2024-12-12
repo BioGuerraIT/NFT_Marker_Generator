@@ -48,12 +48,12 @@ COPY . .
 RUN mkdir -p uploads outputs && \
     chmod 777 uploads outputs
 
-# Set environment variables for TensorFlow.js
-ENV NODE_OPTIONS="--max-old-space-size=4096"
+# Set environment variables
+ENV NODE_OPTIONS="--max-old-space-size=4096 --expose-gc"
 ENV LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
 
 # Expose port
 EXPOSE 3000
 
-# Start the application
-CMD ["npm", "start"]
+# Start the application with garbage collection enabled
+CMD ["node", "--expose-gc", "server.js"]
