@@ -16,28 +16,31 @@ function binomialFilter(input) {
   return tf.tidy(() => {
     // Create a binomial filter kernel (approximating Gaussian)
     const filterWeights = [
-      [1/16, 2/16, 1/16],
-      [2/16, 4/16, 2/16],
-      [1/16, 2/16, 1/16]
+      [[[1/16]], [[2/16]], [[1/16]]],
+      [[[2/16]], [[4/16]], [[2/16]]],
+      [[[1/16]], [[2/16]], [[1/16]]]
     ];
-    const kernel = tf.tensor4d(filterWeights, [3, 3, 1, 1]);
     
-    // Ensure input is properly shaped
-    const reshapedInput = input.reshape([1, input.shape[0], input.shape[1], 1]);
+    // Create the kernel with proper shape [height, width, in_channels, out_channels]
+    const kernel = tf.tensor4d(filterWeights);
     
-    // Apply convolution
+    // Ensure input is properly shaped [batch, height, width, channels]
+    const reshapedInput = tf.expandDims(tf.expandDims(input, 0), -1);
+    
+    // Apply convolution with proper padding
     const output = tf.conv2d(reshapedInput, kernel, 1, 'same');
     
-    // Reshape back to original dimensions
-    return output.reshape(input.shape);
+    // Remove the extra dimensions
+    return tf.squeeze(output);
   });
 }
 
-// Monkey patch the BinomialFilter operation
-tf.engine().registerBackend('tensorflow', {
-  ...tf.backend(),
-  binomialFilter: (args) => {
-    const { x } = args;
+// Register the binomial filter operation
+tf.registerKernel({
+  kernelName: 'BinomialFilter',
+  backendName: 'tensorflow',
+  kernelFunc: ({ inputs }) => {
+    const { x } = inputs;
     return binomialFilter(x);
   }
 });
@@ -48,7 +51,7 @@ async function initTensorFlow() {
     await tf.ready();
     tf.engine().startScope();
     
-    // Pre-warm the backend
+    // Pre-warm the backend with a small test
     tf.tidy(() => {
       const testTensor = tf.tensor2d([[1, 2], [3, 4]]);
       const warmupResult = binomialFilter(testTensor);
