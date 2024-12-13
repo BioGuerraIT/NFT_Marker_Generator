@@ -4,9 +4,13 @@ import path from "path";
 import { spawn } from "child_process";
 import { fileURLToPath } from "url";
 import fs from "fs";
-import { writeFile } from 'fs/promises';
 import { v4 as uuidv4 } from 'uuid';
 import cors from 'cors';
+import { uploadToS3 } from './s3-config.js';
+import dotenv from 'dotenv';
+
+// Load environment variables
+dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -15,66 +19,74 @@ const PORT = process.env.PORT || 3000;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Configure multer to store files with their original extensions
-const storage = multer.diskStorage({
-  destination: 'uploads/',
-  filename: function (req, file, cb) {
-    cb(null, Date.now() + path.extname(file.originalname));
-  }
-});
-
+// Configure multer to store files in memory
+const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
-// Add CORS middleware
-app.use(cors());
+// Add CORS middleware with configuration
+app.use(cors({
+  origin: process.env.CORS_ORIGIN || '*',
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
 app.use(express.json());
+
+// Health check endpoint for Railway
+app.get('/health', (req, res) => {
+  res.json({ status: 'healthy' });
+});
 
 app.post("/create-nft", upload.single("image"), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: "No file uploaded" });
   }
 
-  const uploadedFilePath = req.file.path;
-  console.log("Uploaded file path:", uploadedFilePath);
+  // Save the file temporarily
+  const tempFilePath = path.join('uploads', `${Date.now()}${path.extname(req.file.originalname)}`);
+  await fs.promises.mkdir('uploads', { recursive: true });
+  await fs.promises.writeFile(tempFilePath, req.file.buffer);
 
-  const nftCreator = spawn('node', ['app.js', uploadedFilePath]);
+  console.log("Uploaded file path:", tempFilePath);
+
+  const nftCreator = spawn('node', ['app.js', tempFilePath]);
   let stdoutData = '';
   let stderrData = '';
-  let mindFilePath = null;
 
   nftCreator.stdout.on('data', (data) => {
     stdoutData += data.toString();
-    // Check for success message in the output
-    const match = stdoutData.match(/Success: (.+\.mind)/);
-    if (match) {
-      mindFilePath = match[1];
-    }
+    console.log('stdout:', data.toString());
   });
 
   nftCreator.stderr.on('data', (data) => {
     stderrData += data.toString();
+    console.error('stderr:', data.toString());
   });
 
-  nftCreator.on('close', (code) => {
+  nftCreator.on('close', async (code) => {
+    console.log('Process exit code:', code);
     console.log('stdout:', stdoutData);
     console.log('stderr:', stderrData);
+
+    // Clean up temporary file
+    fs.unlink(tempFilePath, (err) => {
+      if (err) console.error('Error deleting temp file:', err);
+    });
 
     if (code !== 0) {
       return res.status(500).json({ error: 'Error generating NFT marker' });
     }
 
-    if (mindFilePath) {
-      // Get just the filename from the path
-      const fileName = path.basename(mindFilePath);
-      // Construct the URL path
-      const mindFileUrl = `${req.protocol}://${req.get('host')}/outputs/${fileName}`;
+    // Extract S3 URL from stdout
+    const match = stdoutData.match(/Success: (https:\/\/[^\s]+)/);
+    if (match) {
       res.json({ 
         success: true,
         message: 'NFT marker generated successfully',
-        path: mindFileUrl
+        url: match[1]
       });
     } else {
-      res.status(500).json({ error: 'Could not find generated file path' });
+      res.status(500).json({ error: 'Could not find generated file URL' });
     }
   });
 
@@ -88,30 +100,18 @@ app.post("/create-ar-page", upload.none(), async (req, res) => {
   try {
     const { html } = req.body;
     const fileName = `ar-${uuidv4()}.html`;
-    const filePath = path.join(__dirname, 'outputs', fileName);
     
-    await writeFile(filePath, html);
+    // Upload HTML to S3
+    const uploadResult = await uploadToS3(Buffer.from(html), fileName);
     
-    const pageUrl = `${req.protocol}://${req.get('host')}/outputs/${fileName}`;
-    res.json({ success: true, url: pageUrl });
+    if (!uploadResult.success) {
+      throw new Error('Failed to upload AR page');
+    }
+    
+    res.json({ success: true, url: uploadResult.url });
   } catch (error) {
     console.error('Error creating AR page:', error);
     res.status(500).json({ success: false, error: 'Failed to create AR page' });
-  }
-});
-
-// Serve static files from the outputs directory
-app.use("/outputs", express.static(path.join(__dirname, "outputs")));
-
-// Add an endpoint to download the file directly
-app.get("/outputs/:filename", (req, res) => {
-  const filename = req.params.filename;
-  const filePath = path.join(__dirname, 'outputs', filename);
-  
-  if (fs.existsSync(filePath)) {
-    res.download(filePath);
-  } else {
-    res.status(404).json({ error: "File not found" });
   }
 });
 
@@ -124,7 +124,11 @@ app.use((err, req, res, next) => {
   });
 });
 
+// Get the server URL from Railway or default to localhost
 const serverUrl = process.env.RAILWAY_STATIC_URL || `http://localhost:${PORT}`;
-app.listen(PORT, () => {
+
+// Start the server
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`NFT Creator is running on ${serverUrl}`);
+  console.log(`Environment: ${process.env.NODE_ENV}`);
 });

@@ -1,140 +1,56 @@
 import { parentPort, workerData } from 'worker_threads';
-import { createCanvas, loadImage } from "canvas";
+import { loadImage } from "canvas";
 import { OfflineCompiler } from "mind-ar/src/image-target/offline-compiler.js";
-import { writeFile, mkdir } from 'fs/promises';
 import path from 'path';
-import { fileURLToPath } from "url";
+import { uploadToS3 } from './s3-config.js';
+import dotenv from 'dotenv';
 
-// Define __dirname for ES modules
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+// Load environment variables
+dotenv.config();
 
 const filePath = workerData;
 
-// Function to optimize image before processing
-async function optimizeImage(image) {
-  const canvas = createCanvas(image.width, image.height);
-  const ctx = canvas.getContext('2d');
-  
-  // Scale down large images to prevent memory issues
-  let targetWidth = image.width;
-  let targetHeight = image.height;
-  const MAX_SIZE = 800;
-  
-  if (image.width > MAX_SIZE || image.height > MAX_SIZE) {
-    const ratio = Math.min(MAX_SIZE / image.width, MAX_SIZE / image.height);
-    targetWidth = Math.floor(image.width * ratio);
-    targetHeight = Math.floor(image.height * ratio);
-  }
-  
-  canvas.width = targetWidth;
-  canvas.height = targetHeight;
-  
-  // Draw image with smoothing
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(image, 0, 0, targetWidth, targetHeight);
-  
-  const optimized = await loadImage(canvas.toBuffer());
-  
-  // Clean up
-  canvas.width = 1;
-  canvas.height = 1;
-  ctx.clearRect(0, 0, 1, 1);
-  
-  return optimized;
-}
-
-async function compileTarget() {
-  let canvas = null;
-  let compiler = null;
-  
-  try {
-    // Load and optimize the image
-    const originalImage = await loadImage(filePath);
-    const optimizedImage = await optimizeImage(originalImage);
-    
-    // Initialize compiler with optimized settings
-    compiler = new OfflineCompiler({
-      maxWorkers: 1,
-      warmupTolerance: 1,
-      maxTrack: 1,
-      filterMinCF: 0.1,
-      filterBeta: 10,
-      debugMode: false
-    });
-    
-    // Normalize progress reporting
-    let lastProgress = 0;
-    let lastReportTime = Date.now();
-    
-    await compiler.compileImageTargets([optimizedImage], (progress) => {
-      const now = Date.now();
-      // Only report progress every 500ms to reduce overhead
-      if (now - lastReportTime >= 500) {
-        const normalizedProgress = Math.min(Math.max(progress * 100, lastProgress), 100);
-        lastProgress = normalizedProgress;
-        lastReportTime = now;
+new Promise(async (resolve, reject) => {
+    try {
+        console.log('Loading image:', filePath);
+        const image = await loadImage(filePath);
+        console.log('Image loaded, starting compilation');
         
-        parentPort.postMessage({
-          type: 'progress',
-          progress: normalizedProgress
+        const compiler = new OfflineCompiler();
+        await compiler.compileImageTargets([image], (progress) => {
+            console.log(`Compilation progress: ${Math.round(progress * 100)}%`);
         });
-      }
-    });
-    
-    // Export and save the compiled data
-    const buffer = compiler.exportData();
-    const outputDir = path.resolve(__dirname, "outputs");
-    const fileName = `target_${Date.now()}.mind`;
-    const targetMindPath = path.join(outputDir, fileName);
-    
-    await mkdir(outputDir, { recursive: true });
-    await writeFile(targetMindPath, buffer);
-    
-    return targetMindPath;
-  } catch (error) {
-    throw error;
-  } finally {
-    // Clean up resources
-    if (canvas) {
-      canvas.width = 1;
-      canvas.height = 1;
-      canvas = null;
-    }
-    
-    if (compiler) {
-      // Clean up compiler resources if possible
-      if (typeof compiler.dispose === 'function') {
-        compiler.dispose();
-      }
-      compiler = null;
-    }
-    
-    // Force garbage collection if available
-    if (global.gc) {
-      global.gc();
-    }
-  }
-}
+        
+        console.log('Compilation complete, exporting data');
+        const buffer = compiler.exportData();
 
-// Execute the compilation
-compileTarget()
-  .then((targetPath) => {
+        const fileName = `target_${Date.now()}.mind`;
+        console.log('Uploading to S3:', fileName);
+        console.log('Using bucket:', process.env.AWS_BUCKET_NAME); // Debug log
+        
+        const uploadResult = await uploadToS3(buffer, fileName);
+        if (!uploadResult.success) {
+            throw new Error(`Failed to upload to S3: ${uploadResult.error}`);
+        }
+        
+        resolve(uploadResult.url);
+    } catch (error) {
+        console.error('Error in worker:', error);
+        reject(error);
+    }
+})
+.then((url) => {
     parentPort.postMessage({
-      type: 'complete',
-      success: true,
-      message: "NFT marker generated successfully",
-      path: targetPath
+        type: 'complete',
+        success: true,
+        message: 'NFT marker generated successfully',
+        path: url
     });
-    process.exit(0);
-  })
-  .catch((error) => {
-    console.error('Compilation error:', error);
+})
+.catch((error) => {
     parentPort.postMessage({
-      type: 'complete',
-      success: false,
-      message: `Worker Error: ${error.message}`
+        type: 'complete',
+        success: false,
+        message: `Worker Error: ${error.message}`
     });
-    process.exit(1);
-  });
+});

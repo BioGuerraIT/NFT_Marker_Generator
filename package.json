@@ -12,6 +12,8 @@
   "author": "https://github.com/AbRezaei",
   "license": "ISC",
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.709.0",
+    "@aws-sdk/s3-request-presigner": "^3.709.0",
     "@tensorflow/tfjs": "4.15.0",
     "@tensorflow/tfjs-node": "4.15.0",
     "canvas": "2.11.2",

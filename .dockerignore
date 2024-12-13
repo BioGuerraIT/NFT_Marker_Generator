@@ -1,0 +1,15 @@
+node_modules
+npm-debug.log
+uploads/*
+!uploads/.gitkeep
+outputs/*
+!outputs/.gitkeep
+.env
+.git
+.gitignore
+README.md
+*.mind
+*.jpg
+*.jpeg
+*.png
+*.gif 
