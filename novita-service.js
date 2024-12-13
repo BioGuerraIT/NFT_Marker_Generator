@@ -6,44 +6,38 @@ const NOVITA_API_KEY = process.env.NOVITA_API_KEY;
 
 async function resizeImage(imageBuffer) {
     const img = await loadImage(imageBuffer);
+    console.log('Original dimensions:', img.width, 'x', img.height);
     
     // Target dimensions for Novita.ai
     const TARGET_SIZE = 512;
     
-    // Create canvas with target dimensions
+    // Create canvas for final output
     const canvas = createCanvas(TARGET_SIZE, TARGET_SIZE);
     const ctx = canvas.getContext('2d');
     
-    // Calculate dimensions to maintain aspect ratio while covering the square
-    let sourceWidth = img.width;
-    let sourceHeight = img.height;
-    let sourceX = 0;
-    let sourceY = 0;
+    // Calculate crop dimensions
+    let cropSize = Math.min(img.width, img.height);
+    let sourceX = Math.floor((img.width - cropSize) / 2);
+    let sourceY = Math.floor((img.height - cropSize) / 2);
     
-    if (sourceWidth / sourceHeight > 1) {
-        // Image is wider than tall
-        sourceWidth = Math.round((sourceHeight * TARGET_SIZE) / TARGET_SIZE);
-        sourceX = Math.round((img.width - sourceWidth) / 2);
-    } else {
-        // Image is taller than wide
-        sourceHeight = Math.round((sourceWidth * TARGET_SIZE) / TARGET_SIZE);
-        sourceY = Math.round((img.height - sourceHeight) / 2);
-    }
+    // Ensure we don't have negative coordinates
+    sourceX = Math.max(0, sourceX);
+    sourceY = Math.max(0, sourceY);
     
-    // Fill background with white to prevent transparency issues
+    // Fill background with white
     ctx.fillStyle = '#FFFFFF';
     ctx.fillRect(0, 0, TARGET_SIZE, TARGET_SIZE);
     
-    // Draw image centered and cropped
+    // Draw the image cropped and scaled to 512x512
     ctx.drawImage(
         img,
-        sourceX, sourceY,     // Source X, Y
-        sourceWidth, sourceHeight,  // Source width, height
-        0, 0,                 // Destination X, Y
-        TARGET_SIZE, TARGET_SIZE    // Destination width, height
+        sourceX, sourceY,         // Start at center of the source image
+        cropSize, cropSize,       // Take a square crop
+        0, 0,                     // Place at top-left of canvas
+        TARGET_SIZE, TARGET_SIZE  // Scale to target size
     );
     
-    console.log(`Resized image to ${TARGET_SIZE}x${TARGET_SIZE} for Novita.ai`);
+    console.log(`Cropped and resized to ${TARGET_SIZE}x${TARGET_SIZE} for Novita.ai`);
     
     // Convert to base64
     const base64Data = canvas.toDataURL('image/jpeg', 0.9).split(',')[1];
