@@ -28,11 +28,24 @@ function sendError(error) {
     });
 }
 
+// Send success to parent
+function sendSuccess(url) {
+    console.log('NFT Marker URL:', url);
+    parentPort.postMessage({
+        type: 'complete',
+        success: true,
+        message: 'NFT marker generated successfully',
+        path: url
+    });
+}
+
 // Validate and preprocess image
 async function preprocessImage(image) {
     const MIN_SIZE = 200;
     const MAX_SIZE = 1000;
     const TARGET_SIZE = 800;
+
+    console.log('Original dimensions:', image.width, 'x', image.height);
 
     // Check minimum dimensions
     if (image.width < MIN_SIZE || image.height < MIN_SIZE) {
@@ -69,6 +82,8 @@ async function preprocessImage(image) {
     ctx.fillStyle = 'rgba(255,255,255,0.1)';
     ctx.fillRect(0, 0, targetWidth, targetHeight);
 
+    console.log('Processed dimensions:', targetWidth, 'x', targetHeight);
+
     // Convert back to image
     const processedImage = await loadImage(canvas.toBuffer());
 
@@ -84,11 +99,9 @@ async function processImage() {
     try {
         console.log('Loading image:', filePath);
         const originalImage = await loadImage(filePath);
-        console.log('Original dimensions:', originalImage.width, 'x', originalImage.height);
         
         console.log('Preprocessing image...');
         const processedImage = await preprocessImage(originalImage);
-        console.log('Processed dimensions:', processedImage.width, 'x', processedImage.height);
         
         console.log('Starting compilation');
         const compiler = new OfflineCompiler({
@@ -127,7 +140,6 @@ async function processImage() {
             throw new Error(`Failed to upload to S3: ${uploadResult.error}`);
         }
         
-        console.log('Success! URL:', uploadResult.url);
         return uploadResult.url;
     } catch (error) {
         console.error('Error in processImage:', error);
@@ -144,12 +156,7 @@ const timeout = setTimeout(() => {
 processImage()
     .then((url) => {
         clearTimeout(timeout);
-        parentPort.postMessage({
-            type: 'complete',
-            success: true,
-            message: 'NFT marker generated successfully',
-            path: url
-        });
+        sendSuccess(url);
         process.exit(0);
     })
     .catch((error) => {

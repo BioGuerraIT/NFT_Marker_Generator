@@ -62,8 +62,17 @@ app.post("/create-nft", upload.single("image"), async (req, res) => {
           let stderrData = '';
 
           nftCreator.stdout.on('data', (data) => {
-            stdoutData += data.toString();
-            console.log('stdout:', data.toString());
+            const message = data.toString();
+            stdoutData += message;
+            console.log('stdout:', message);
+
+            // Check for NFT Marker URL in the output
+            if (message.includes('NFT Marker URL:')) {
+              const url = message.split('NFT Marker URL:')[1].trim();
+              if (url) {
+                resolve(url);
+              }
+            }
           });
 
           nftCreator.stderr.on('data', (data) => {
@@ -82,6 +91,7 @@ app.post("/create-nft", upload.single("image"), async (req, res) => {
               return;
             }
 
+            // If we haven't resolved yet, try to find URL in stdout
             const match = stdoutData.match(/Success: (https:\/\/[^\s\n]+)/);
             if (match) {
               resolve(match[1]);
