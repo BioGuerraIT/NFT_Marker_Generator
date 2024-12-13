@@ -1,5 +1,4 @@
 import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import dotenv from 'dotenv';
 
 // Load environment variables
@@ -18,18 +17,19 @@ export async function uploadToS3(buffer, filename) {
     Bucket: process.env.AWS_BUCKET_NAME,
     Key: filename,
     Body: buffer,
-    ContentType: 'application/octet-stream'
+    ContentType: 'application/octet-stream',
+    ACL: 'public-read'  // Make object publicly readable
   });
 
   try {
     await s3Client.send(command);
     
-    // Generate a signed URL that expires in 1 hour
-    const signedUrl = await getSignedUrl(s3Client, command, { expiresIn: 3600 });
+    // Return the direct public URL
+    const publicUrl = `https://${process.env.AWS_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${filename}`;
     
     return {
       success: true,
-      url: signedUrl,
+      url: publicUrl,
       key: filename
     };
   } catch (error) {
