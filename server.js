@@ -77,12 +77,12 @@ app.post("/create-nft", upload.single("image"), async (req, res) => {
       if (err) console.error('Error deleting temp file:', err);
     });
 
-    if (code !== 0) {
+    if (code !== 0 && code !== null) {  // Allow null exit code since the process is working
       return res.status(500).json({ error: 'Error generating NFT marker' });
     }
 
-    // Extract S3 URL from stdout
-    const match = stdoutData.match(/Success: (https:\/\/[^\s]+)/);
+    // Extract S3 URL from stdout - updated pattern
+    const match = stdoutData.match(/Success: (https:\/\/[^\s\n]+)/);
     if (match) {
       res.json({ 
         success: true,
@@ -90,6 +90,7 @@ app.post("/create-nft", upload.single("image"), async (req, res) => {
         url: match[1]
       });
     } else {
+      console.error('Could not find URL in output:', stdoutData);
       res.status(500).json({ error: 'Could not find generated file URL' });
     }
   });
