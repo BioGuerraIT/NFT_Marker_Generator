@@ -48,64 +48,62 @@ app.post("/create-nft", upload.single("image"), async (req, res) => {
   }
 
   try {
-    // Start both processes in parallel
-    const [markerUrl, videoUrl] = await Promise.all([
-      // NFT Marker Generation
-      new Promise((resolve, reject) => {
-        // Save the file temporarily
-        const tempFilePath = path.join('uploads', `${Date.now()}${path.extname(req.file.originalname)}`);
-        fs.promises.mkdir('uploads', { recursive: true })
-          .then(() => fs.promises.writeFile(tempFilePath, req.file.buffer))
-          .then(() => {
-            console.log("Uploaded file path:", tempFilePath);
+    // 1. First generate the NFT marker
+    const markerUrl = await new Promise((resolve, reject) => {
+      // Save the file temporarily
+      const tempFilePath = path.join('uploads', `${Date.now()}${path.extname(req.file.originalname)}`);
+      fs.promises.mkdir('uploads', { recursive: true })
+        .then(() => fs.promises.writeFile(tempFilePath, req.file.buffer))
+        .then(() => {
+          console.log("Uploaded file path:", tempFilePath);
 
-            const nftCreator = spawn('node', ['app.js', tempFilePath]);
-            let stdoutData = '';
-            let stderrData = '';
+          const nftCreator = spawn('node', ['app.js', tempFilePath]);
+          let stdoutData = '';
+          let stderrData = '';
 
-            nftCreator.stdout.on('data', (data) => {
-              stdoutData += data.toString();
-              console.log('stdout:', data.toString());
+          nftCreator.stdout.on('data', (data) => {
+            stdoutData += data.toString();
+            console.log('stdout:', data.toString());
+          });
+
+          nftCreator.stderr.on('data', (data) => {
+            stderrData += data.toString();
+            console.error('stderr:', data.toString());
+          });
+
+          nftCreator.on('close', async (code) => {
+            // Clean up temporary file
+            fs.unlink(tempFilePath, (err) => {
+              if (err) console.error('Error deleting temp file:', err);
             });
 
-            nftCreator.stderr.on('data', (data) => {
-              stderrData += data.toString();
-              console.error('stderr:', data.toString());
-            });
+            if (code !== 0 && code !== null) {
+              reject(new Error('Error generating NFT marker'));
+              return;
+            }
 
-            nftCreator.on('close', async (code) => {
-              // Clean up temporary file
-              fs.unlink(tempFilePath, (err) => {
-                if (err) console.error('Error deleting temp file:', err);
-              });
+            const match = stdoutData.match(/Success: (https:\/\/[^\s\n]+)/);
+            if (match) {
+              resolve(match[1]);
+            } else {
+              console.error('Could not find URL in output:', stdoutData);
+              reject(new Error('Could not find generated file URL'));
+            }
+          });
 
-              if (code !== 0 && code !== null) {
-                reject(new Error('Error generating NFT marker'));
-                return;
-              }
+          nftCreator.on('error', (error) => {
+            console.error('Error:', error);
+            reject(error);
+          });
+        })
+        .catch(reject);
+    });
 
-              const match = stdoutData.match(/Success: (https:\/\/[^\s\n]+)/);
-              if (match) {
-                resolve(match[1]);
-              } else {
-                console.error('Could not find URL in output:', stdoutData);
-                reject(new Error('Could not find generated file URL'));
-              }
-            });
+    // 2. Only if NFT marker generation succeeds, proceed with video generation
+    console.log('NFT marker generated successfully, starting video generation...');
+    const videoUrl = await processImageWithNovita(req.file.buffer);
 
-            nftCreator.on('error', (error) => {
-              console.error('Error:', error);
-              reject(error);
-            });
-          })
-          .catch(reject);
-      }),
-
-      // Video Generation with Novita.ai
-      processImageWithNovita(req.file.buffer)
-    ]);
-
-    // Both processes completed successfully
+    // 3. Both processes completed successfully
     res.json({
       success: true,
       message: 'NFT marker and video generated successfully',
