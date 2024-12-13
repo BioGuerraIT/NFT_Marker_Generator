@@ -17,8 +17,7 @@ export async function uploadToS3(buffer, filename) {
     Bucket: process.env.AWS_BUCKET_NAME,
     Key: filename,
     Body: buffer,
-    ContentType: 'application/octet-stream',
-    ACL: 'public-read'  // Make object publicly readable
+    ContentType: 'application/octet-stream'
   });
 
   try {
