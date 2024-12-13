@@ -7,6 +7,7 @@ import fs from "fs";
 import { v4 as uuidv4 } from 'uuid';
 import cors from 'cors';
 import { uploadToS3 } from './s3-config.js';
+import { processImageWithNovita } from './novita-service.js';
 import dotenv from 'dotenv';
 
 // Load environment variables
@@ -46,59 +47,79 @@ app.post("/create-nft", upload.single("image"), async (req, res) => {
     return res.status(400).json({ error: "No file uploaded" });
   }
 
-  // Save the file temporarily
-  const tempFilePath = path.join('uploads', `${Date.now()}${path.extname(req.file.originalname)}`);
-  await fs.promises.mkdir('uploads', { recursive: true });
-  await fs.promises.writeFile(tempFilePath, req.file.buffer);
+  try {
+    // Start both processes in parallel
+    const [markerUrl, videoUrl] = await Promise.all([
+      // NFT Marker Generation
+      new Promise((resolve, reject) => {
+        // Save the file temporarily
+        const tempFilePath = path.join('uploads', `${Date.now()}${path.extname(req.file.originalname)}`);
+        fs.promises.mkdir('uploads', { recursive: true })
+          .then(() => fs.promises.writeFile(tempFilePath, req.file.buffer))
+          .then(() => {
+            console.log("Uploaded file path:", tempFilePath);
 
-  console.log("Uploaded file path:", tempFilePath);
+            const nftCreator = spawn('node', ['app.js', tempFilePath]);
+            let stdoutData = '';
+            let stderrData = '';
 
-  const nftCreator = spawn('node', ['app.js', tempFilePath]);
-  let stdoutData = '';
-  let stderrData = '';
+            nftCreator.stdout.on('data', (data) => {
+              stdoutData += data.toString();
+              console.log('stdout:', data.toString());
+            });
 
-  nftCreator.stdout.on('data', (data) => {
-    stdoutData += data.toString();
-    console.log('stdout:', data.toString());
-  });
+            nftCreator.stderr.on('data', (data) => {
+              stderrData += data.toString();
+              console.error('stderr:', data.toString());
+            });
 
-  nftCreator.stderr.on('data', (data) => {
-    stderrData += data.toString();
-    console.error('stderr:', data.toString());
-  });
+            nftCreator.on('close', async (code) => {
+              // Clean up temporary file
+              fs.unlink(tempFilePath, (err) => {
+                if (err) console.error('Error deleting temp file:', err);
+              });
 
-  nftCreator.on('close', async (code) => {
-    console.log('Process exit code:', code);
-    console.log('stdout:', stdoutData);
-    console.log('stderr:', stderrData);
+              if (code !== 0 && code !== null) {
+                reject(new Error('Error generating NFT marker'));
+                return;
+              }
 
-    // Clean up temporary file
-    fs.unlink(tempFilePath, (err) => {
-      if (err) console.error('Error deleting temp file:', err);
+              const match = stdoutData.match(/Success: (https:\/\/[^\s\n]+)/);
+              if (match) {
+                resolve(match[1]);
+              } else {
+                console.error('Could not find URL in output:', stdoutData);
+                reject(new Error('Could not find generated file URL'));
+              }
+            });
+
+            nftCreator.on('error', (error) => {
+              console.error('Error:', error);
+              reject(error);
+            });
+          })
+          .catch(reject);
+      }),
+
+      // Video Generation with Novita.ai
+      processImageWithNovita(req.file.buffer)
+    ]);
+
+    // Both processes completed successfully
+    res.json({
+      success: true,
+      message: 'NFT marker and video generated successfully',
+      markerUrl: markerUrl,
+      videoUrl: videoUrl
     });
 
-    if (code !== 0 && code !== null) {  // Allow null exit code since the process is working
-      return res.status(500).json({ error: 'Error generating NFT marker' });
-    }
-
-    // Extract S3 URL from stdout - updated pattern
-    const match = stdoutData.match(/Success: (https:\/\/[^\s\n]+)/);
-    if (match) {
-      res.json({ 
-        success: true,
-        message: 'NFT marker generated successfully',
-        url: match[1]
-      });
-    } else {
-      console.error('Could not find URL in output:', stdoutData);
-      res.status(500).json({ error: 'Could not find generated file URL' });
-    }
-  });
-
-  nftCreator.on('error', (error) => {
-    console.error('Error:', error);
-    res.status(500).json({ error: 'Error running nft_creator' });
-  });
+  } catch (error) {
+    console.error('Error in create-nft:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message || 'Error processing image' 
+    });
+  }
 });
 
 app.post("/create-ar-page", upload.none(), async (req, res) => {
