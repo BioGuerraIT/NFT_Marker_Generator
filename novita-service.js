@@ -87,10 +87,12 @@ export async function processImageWithNovita(imageBuffer) {
         let status = '';
         let videoUrl = '';
         let attempts = 0;
-        const maxAttempts = 30; // Maximum polling attempts (2 minutes with 4-second intervals)
+        const maxAttempts = 90; // Maximum polling attempts (6 minutes with 4-second intervals)
+        const pollInterval = 4000; // 4 seconds between checks
 
         while (status !== 'TASK_STATUS_SUCCEED' && attempts < maxAttempts) {
             attempts++;
+            console.log(`Checking status attempt ${attempts}/${maxAttempts} (${Math.round(attempts/maxAttempts * 100)}%)`);
             
             const statusResponse = await fetch(
                 `https://api.novita.ai/v3/async/task-result?task_id=${taskId}`,
@@ -136,12 +138,12 @@ export async function processImageWithNovita(imageBuffer) {
                 throw new Error(`Video generation failed: ${statusData.task?.reason || 'Unknown error'}`);
             }
 
-            // Wait 4 seconds before next check
-            await new Promise(resolve => setTimeout(resolve, 4000));
+            // Wait before next check
+            await new Promise(resolve => setTimeout(resolve, pollInterval));
         }
 
         if (attempts >= maxAttempts) {
-            throw new Error('Video generation timed out');
+            throw new Error(`Video generation timed out after ${Math.round(maxAttempts * pollInterval / 1000)} seconds`);
         }
 
     } catch (error) {
