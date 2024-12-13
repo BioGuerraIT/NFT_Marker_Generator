@@ -34,7 +34,11 @@ app.use(express.json());
 
 // Health check endpoint for Railway
 app.get('/health', (req, res) => {
-  res.json({ status: 'healthy' });
+  res.json({ 
+    status: 'healthy',
+    version: '1.0.0',
+    timestamp: new Date().toISOString()
+  });
 });
 
 app.post("/create-nft", upload.single("image"), async (req, res) => {
