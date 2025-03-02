@@ -29,12 +29,19 @@ jobs:
     - name: Run basic tests
       run: node --experimental-vm-modules node_modules/jest/bin/jest.js __tests__/basic.test.js
     
+    - name: Create .env file for testing
+      run: |
+        echo "AWS_REGION=us-east-1" > .env
+        echo "AWS_BUCKET_NAME=test-bucket" >> .env
+        echo "NOVITA_API_KEY=test-key" >> .env
+        echo "CORS_ORIGIN=*" >> .env
+    
     - name: Run server health check test
       run: node --experimental-vm-modules node_modules/jest/bin/jest.js __tests__/server.test.js
       env:
-        AWS_REGION: ${{ secrets.AWS_REGION }}
-        AWS_BUCKET_NAME: ${{ secrets.AWS_BUCKET_NAME }}
-        NOVITA_API_KEY: ${{ secrets.NOVITA_API_KEY }}
+        AWS_REGION: 'us-east-1'
+        AWS_BUCKET_NAME: 'test-bucket'
+        NOVITA_API_KEY: 'test-key'
         CORS_ORIGIN: '*'
     
     - name: Verify server starts
@@ -42,11 +49,11 @@ jobs:
         npm start &
         SERVER_PID=$!
         sleep 5
-        kill $SERVER_PID
+        kill $SERVER_PID || true
       env:
-        AWS_REGION: ${{ secrets.AWS_REGION }}
-        AWS_BUCKET_NAME: ${{ secrets.AWS_BUCKET_NAME }}
-        NOVITA_API_KEY: ${{ secrets.NOVITA_API_KEY }}
+        AWS_REGION: 'us-east-1'
+        AWS_BUCKET_NAME: 'test-bucket'
+        NOVITA_API_KEY: 'test-key'
         CORS_ORIGIN: '*'
 
     - name: Upload coverage reports to Codecov
